@@ -20,7 +20,22 @@ export default function RecyclerDashboard() {
 
   async function loadListings() { const { data, error } = await supabase.from('waste_listings').select('*').in('status', ['available', 'pending']).order('created_at', { ascending: false }); if (error) setMessage(error.message); else setListings(data || []); }
   useEffect(() => { async function initialise() { try { const userProfile = await getCurrentUserProfile(); if (!userProfile || userProfile.role !== 'recycler') return router.replace('/dashboard'); setProfile(userProfile); await loadListings(); } catch { router.replace('/login'); } finally { setIsLoading(false); } } initialise(); }, [router]);
-  async function claimListing(id: string) { setClaimingId(id); setMessage(''); const { error } = await supabase.from('waste_listings').update({ status: 'claimed', processor_id: profile.id }).eq('id', id).in('status', ['available', 'pending']); setClaimingId(null); if (error) setMessage(error.message); else { setMessage('Listing diklaim. Koordinasikan pengambilan dengan sumber sisa organik.'); await loadListings(); } }
+  async function claimListing(id: string) {
+    if (!profile?.id) return setMessage('Profil pengolah belum tersedia. Logout lalu masuk kembali.');
+    setClaimingId(id); setMessage('');
+    const { data: claimedListing, error } = await supabase
+      .from('waste_listings')
+      .update({ status: 'claimed', processor_id: profile.id })
+      .eq('id', id)
+      .in('status', ['available', 'pending'])
+      .select('*')
+      .single();
+    setClaimingId(null);
+    if (error) return setMessage(error.message);
+    if (!claimedListing) return setMessage('Klaim tidak mengembalikan data. Periksa policy UPDATE recycler di Supabase.');
+    setListings((current) => current.filter((listing) => listing.id !== claimedListing.id));
+    setMessage('Listing diklaim. Koordinasikan pengambilan dengan sumber sisa organik.');
+  }
   if (isLoading) return <main className="bl-dashboard-loading">Menyiapkan dashboard pengolah…</main>;
 
   const availableKg = listings.reduce((total, item) => total + Number(item.weight_kg || 0), 0);

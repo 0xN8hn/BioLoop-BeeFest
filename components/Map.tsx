@@ -20,6 +20,8 @@ interface WasteLocation {
   location_name: string;
   lat?: number;
   lng?: number;
+  location_lat?: number;
+  location_lng?: number;
   status: string;
 }
 
@@ -45,10 +47,12 @@ export default function InteractiveMap({ locations }: MapProps) {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
 
-        {locations.map((loc, idx) => {
-          // Jika lokasi belum memiliki koordinat lat/lng, gunakan offset simulasi sekitar Jakarta
-          const lat = loc.lat || defaultLat + (idx * 0.012 - 0.02);
-          const lng = loc.lng || defaultLng + (idx * 0.015 - 0.01);
+        {locations.map((loc) => {
+          // Only render verifiable location data; no synthetic map markers.
+          const lat = loc.lat ?? loc.location_lat;
+          const lng = loc.lng ?? loc.location_lng;
+
+          if (typeof lat !== 'number' || typeof lng !== 'number') return null;
 
           return (
             <Marker key={loc.id} position={[lat, lng]} icon={customIcon}>

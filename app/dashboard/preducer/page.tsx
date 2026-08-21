@@ -22,8 +22,10 @@ export default function ProducerDashboard() {
   const [weight, setWeight] = useState('');
   const [location, setLocation] = useState('');
 
-  async function loadListings() {
-    const { data, error } = await supabase.from('waste_listings').select('*').order('created_at', { ascending: false });
+  async function loadListings(producerId?: string) {
+    let query = supabase.from('waste_listings').select('*').order('created_at', { ascending: false });
+    if (producerId) query = query.eq('producer_id', producerId);
+    const { data, error } = await query;
     if (error) setMessage(error.message);
     else setListings(data || []);
   }
@@ -34,7 +36,7 @@ export default function ProducerDashboard() {
         const userProfile = await getCurrentUserProfile();
         if (!userProfile || userProfile.role !== 'producer') return router.replace('/dashboard');
         setProfile(userProfile);
-        await loadListings();
+        await loadListings(userProfile.id);
       } catch { router.replace('/login'); }
       finally { setIsLoading(false); }
     }
@@ -57,10 +59,16 @@ export default function ProducerDashboard() {
       return setMessage('Profil produsen belum ditemukan. Silakan masuk kembali terlebih dahulu.');
     }
     setProfile(verifiedProfile);
-    const { error } = await supabase.from('waste_listings').insert({ producer_id: verifiedProfile.id, waste_type: wasteType, weight_kg: Number(weight), location_name: location, status: 'available' });
+    const { data: createdListing, error } = await supabase
+      .from('waste_listings')
+      .insert({ producer_id: verifiedProfile.id, waste_type: wasteType, weight_kg: Number(weight), location_name: location, status: 'available' })
+      .select('*')
+      .single();
     setIsSaving(false);
     if (error) return setMessage(error.message);
-    setWeight(''); setLocation(''); setMessage('Listing baru sudah siap dilihat mitra pengolah.'); await loadListings();
+    if (!createdListing) return setMessage('Listing tidak mengembalikan data. Periksa policy SELECT di Supabase.');
+    setListings((current) => [createdListing, ...current.filter((item) => item.id !== createdListing.id)]);
+    setWeight(''); setLocation(''); setMessage('Listing baru berhasil dipublikasikan dan muncul di aktivitas Anda.');
   }
 
   const open = listings.filter((item) => ['available', 'pending'].includes(item.status)).length;

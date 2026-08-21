@@ -50,7 +50,7 @@ const roles = [
 
 const storyFrames = [
   ["Dapur sudah selesai. Masalahnya belum.", "Setiap hari, sisa makanan yang tidak terarah ikut masuk ke alur sampah yang sama."],
-  ["Di tempat pembuangan, sisa makanan membusuk tanpa oksigen.", "Dalam kondisi ini, bahan organik dapat menghasilkan metana—gas rumah kaca yang ikut memerangkap panas."],
+  ["Di tempat pembuangan, sisa makanan membusuk tanpa oksigen.", "Dalam kondisi ini, bahan organik dapat menghasilkan metana, gas rumah kaca yang ikut memerangkap panas."],
   ["Metana bergerak ke atmosfer. Panas ikut tertahan.", "Gunung sampah bukan hanya soal ruang yang penuh. Ia juga menjadi bagian dari masalah iklim yang lebih besar."],
   ["Sisa makanan butuh rute lain.", "BioLoop mempertemukan sumber sisa organik dan partner pengolah agar prosesnya tidak berakhir di tempat pembuangan."],
 ] as const;

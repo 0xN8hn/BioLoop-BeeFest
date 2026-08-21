@@ -74,8 +74,8 @@ drop policy if exists "BioLoop sellers update their listing images" on storage.o
 drop policy if exists "BioLoop sellers remove their listing images" on storage.objects;
 create policy "BioLoop public can read listing images" on storage.objects for select using (bucket_id = 'bioloop-listing-images');
 create policy "BioLoop sellers upload their listing images" on storage.objects for insert to authenticated with check (bucket_id = 'bioloop-listing-images' and (storage.foldername(name))[1] = (select auth.uid()::text));
-create policy "BioLoop sellers update their listing images" on storage.objects for update to authenticated using (bucket_id = 'bioloop-listing-images' and owner_id = auth.uid()) with check (bucket_id = 'bioloop-listing-images' and owner_id = auth.uid());
-create policy "BioLoop sellers remove their listing images" on storage.objects for delete to authenticated using (bucket_id = 'bioloop-listing-images' and owner_id = auth.uid());
+create policy "BioLoop sellers update their listing images" on storage.objects for update to authenticated using (bucket_id = 'bioloop-listing-images' and owner_id::text = auth.uid()::text) with check (bucket_id = 'bioloop-listing-images' and owner_id::text = auth.uid()::text);
+create policy "BioLoop sellers remove their listing images" on storage.objects for delete to authenticated using (bucket_id = 'bioloop-listing-images' and owner_id::text = auth.uid()::text);
 
 -- A schedule is a seller-declared availability commitment. It never auto-publishes a listing.
 create table if not exists public.recurring_availability_schedules (

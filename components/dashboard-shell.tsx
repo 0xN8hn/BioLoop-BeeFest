@@ -3,7 +3,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { Award, Bell, ClipboardList, Leaf, LayoutDashboard, LogOut, PackagePlus, Settings2, ShoppingBag, WalletCards } from 'lucide-react';
+import { Award, Bell, ClipboardList, Leaf, LayoutDashboard, LogOut, PackagePlus, Settings2, ShoppingBag, Truck, WalletCards } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import type { UserRole } from '@/lib/auth';
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 type ShellProps = { role: UserRole; name?: string; points?: number; onSignOut: () => void; children: ReactNode };
 const navByRole: Record<UserRole, { label: string; icon: typeof LayoutDashboard; href: string }[]> = {
   producer: [{ label: 'Seller Center', icon: LayoutDashboard, href: '/dashboard/preducer' }, { label: 'Produk', icon: PackagePlus, href: '/dashboard/preducer/listings' }, { label: 'Pesanan', icon: ClipboardList, href: '/dashboard/preducer/orders' }, { label: 'Keuangan', icon: WalletCards, href: '/dashboard/preducer/payouts' }, { label: 'Sertifikat hijau', icon: Leaf, href: '/dashboard/preducer/green-certificate' }],
-  recycler: [{ label: 'Marketplace', icon: ShoppingBag, href: '/dashboard/recycler/marketplace' }, { label: 'Pesanan saya', icon: ClipboardList, href: '/dashboard/recycler/orders' }, { label: 'Dampak saya', icon: Leaf, href: '/dashboard/recycler/impact' }],
+  recycler: [{ label: 'Marketplace', icon: ShoppingBag, href: '/dashboard/recycler/marketplace' }, { label: 'Pesanan saya', icon: ClipboardList, href: '/dashboard/recycler/orders' }, { label: 'Armada lokal', icon: Truck, href: '/dashboard/recycler/logistics' }, { label: 'Dampak saya', icon: Leaf, href: '/dashboard/recycler/impact' }],
   admin: [{ label: 'Ringkasan', icon: LayoutDashboard, href: '/dashboard/admin' }, { label: 'Marketplace', icon: ShoppingBag, href: '/dashboard/admin/marketplace' }, { label: 'Pesanan', icon: ClipboardList, href: '/dashboard/admin/orders' }, { label: 'Mitra', icon: Award, href: '/dashboard/admin/partners' }],
 };
 export function DashboardShell({ role, name, points = 0, onSignOut, children }: ShellProps) {

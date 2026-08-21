@@ -64,6 +64,19 @@ end $$;
 
 create index if not exists waste_listings_catalog_idx on public.waste_listings (status, category, nutrient_profile, created_at desc);
 
+-- Seller photographs are uploaded directly to Supabase Storage, not committed to this repository.
+insert into storage.buckets (id, name, public)
+values ('bioloop-listing-images', 'bioloop-listing-images', true)
+on conflict (id) do update set public = true;
+drop policy if exists "BioLoop public can read listing images" on storage.objects;
+drop policy if exists "BioLoop sellers upload their listing images" on storage.objects;
+drop policy if exists "BioLoop sellers update their listing images" on storage.objects;
+drop policy if exists "BioLoop sellers remove their listing images" on storage.objects;
+create policy "BioLoop public can read listing images" on storage.objects for select using (bucket_id = 'bioloop-listing-images');
+create policy "BioLoop sellers upload their listing images" on storage.objects for insert to authenticated with check (bucket_id = 'bioloop-listing-images' and (storage.foldername(name))[1] = (select auth.uid()::text));
+create policy "BioLoop sellers update their listing images" on storage.objects for update to authenticated using (bucket_id = 'bioloop-listing-images' and owner_id = auth.uid()) with check (bucket_id = 'bioloop-listing-images' and owner_id = auth.uid());
+create policy "BioLoop sellers remove their listing images" on storage.objects for delete to authenticated using (bucket_id = 'bioloop-listing-images' and owner_id = auth.uid());
+
 -- A schedule is a seller-declared availability commitment. It never auto-publishes a listing.
 create table if not exists public.recurring_availability_schedules (
   id uuid primary key default gen_random_uuid(),
@@ -119,6 +132,19 @@ create table if not exists public.pooling_groups (
   status text not null default 'open' check (status in ('open', 'ready', 'closed', 'cancelled')),
   created_at timestamptz not null default now()
 );
+create table if not exists public.logistics_providers (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  display_name text not null,
+  vehicle_type text not null check (vehicle_type in ('motor_roda_tiga', 'mobil_bak', 'lainnya')),
+  rate_per_km numeric(12,2) not null check (rate_per_km >= 0),
+  service_area text not null,
+  contact text not null,
+  verification_status text not null default 'pending' check (verification_status in ('pending', 'verified', 'rejected')),
+  is_active boolean not null default false,
+  created_at timestamptz not null default now(),
+  unique (owner_id)
+);
 create table if not exists public.pooling_members (
   pooling_group_id uuid not null references public.pooling_groups(id) on delete cascade,
   buyer_id uuid not null references public.profiles(id) on delete cascade,
@@ -134,6 +160,7 @@ create table if not exists public.pooling_messages (
   created_at timestamptz not null default now()
 );
 alter table public.marketplace_orders add column if not exists pooling_group_id uuid references public.pooling_groups(id) on delete set null;
+alter table public.marketplace_orders add column if not exists logistics_provider_id uuid references public.logistics_providers(id) on delete set null;
 
 -- 5) Close a transaction with weight, quality, and measured climate impact.
 create table if not exists public.quality_ratings (
@@ -156,6 +183,17 @@ create table if not exists public.order_impacts (
   methane_prevented_kg numeric(12,2) not null check (methane_prevented_kg >= 0),
   created_at timestamptz not null default now()
 );
+create or replace function public.get_bioloop_listing_rating_summaries()
+returns table(listing_id uuid, rating_average numeric, rating_count bigint)
+language sql
+security definer
+set search_path = public
+as $$
+  select o.listing_id, round(avg(r.score)::numeric, 1) as rating_average, count(r.id) as rating_count
+  from public.quality_ratings r
+  join public.marketplace_orders o on o.id = r.order_id
+  group by o.listing_id;
+$$;
 
 -- Buyer confirms final scale weight. ±10% triggers a review before escrow release.
 create or replace function public.confirm_bioloop_delivery_weight(p_order_id uuid, p_actual_weight_kg numeric)
@@ -228,11 +266,15 @@ alter table public.recurring_availability_schedules enable row level security;
 alter table public.pooling_groups enable row level security;
 alter table public.pooling_members enable row level security;
 alter table public.pooling_messages enable row level security;
+alter table public.logistics_providers enable row level security;
 alter table public.quality_ratings enable row level security;
 alter table public.order_impacts enable row level security;
 
 create policy "BioLoop producers manage their availability commitments" on public.recurring_availability_schedules for all to authenticated using (producer_id = auth.uid()) with check (producer_id = auth.uid());
 create policy "BioLoop buyers can read open pooling groups" on public.pooling_groups for select to authenticated using (true);
+create policy "BioLoop users can read active logistics providers" on public.logistics_providers for select to authenticated using (is_active = true or owner_id = auth.uid());
+create policy "BioLoop users can register their local logistics provider" on public.logistics_providers for insert to authenticated with check (owner_id = auth.uid());
+create policy "BioLoop owners can manage their local logistics provider" on public.logistics_providers for update to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 create policy "BioLoop buyers can create pooling groups" on public.pooling_groups for insert to authenticated with check (creator_id = auth.uid());
 create policy "BioLoop group members can read memberships" on public.pooling_members for select to authenticated using (buyer_id = auth.uid() or exists (select 1 from public.pooling_groups g where g.id = pooling_group_id and g.creator_id = auth.uid()));
 create policy "BioLoop buyers can join pooling groups" on public.pooling_members for insert to authenticated with check (buyer_id = auth.uid());
@@ -261,5 +303,7 @@ revoke all on function public.confirm_bioloop_delivery_weight(uuid, numeric) fro
 grant execute on function public.confirm_bioloop_delivery_weight(uuid, numeric) to authenticated;
 revoke all on function public.get_bioloop_national_impact() from public;
 grant execute on function public.get_bioloop_national_impact() to anon, authenticated;
+revoke all on function public.get_bioloop_listing_rating_summaries() from public;
+grant execute on function public.get_bioloop_listing_rating_summaries() to anon, authenticated;
 
 commit;

@@ -36,8 +36,13 @@ export default function RecyclerMarketplacePage() {
         const currentProfile = await getCurrentUserProfile();
         if (!currentProfile || currentProfile.role !== 'recycler') return router.replace('/dashboard');
         setProfile(currentProfile);
-        const { data, error } = await supabase.from('waste_listings').select('*').in('status', ['available', 'pending']).order('created_at', { ascending: false });
-        if (error) setMessage(error.message); else setItems(data || []);
+        const [listingResult, ratingResult] = await Promise.all([
+          supabase.from('waste_listings').select('*').in('status', ['available', 'pending']).order('created_at', { ascending: false }),
+          supabase.rpc('get_bioloop_listing_rating_summaries'),
+        ]);
+        if (listingResult.error || ratingResult.error) setMessage((listingResult.error || ratingResult.error)?.message || 'Marketplace belum dapat dimuat.');
+        const ratingMap = new globalThis.Map((ratingResult.data || []).map((summary: any) => [summary.listing_id, summary]));
+        setItems((listingResult.data || []).map((listing) => ({ ...listing, ...(ratingMap.get(listing.id) || {}) })));
       } catch { router.replace('/login'); } finally { setLoading(false); }
     })();
   }, [router]);

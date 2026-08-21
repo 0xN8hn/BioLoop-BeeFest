@@ -1,5 +1,6 @@
 /* BioLoop visual system — warm editorial contrast, deliberate motion, and no decorative filler. */
 @import "tailwindcss";
+@import "./marketplace.css";
 
 :root { --background: #f5f0e8; --foreground: #2b2927; }
 @theme inline { --color-background: var(--background); --color-foreground: var(--foreground); --font-sans: var(--font-geist-sans); --font-mono: var(--font-geist-mono); }

@@ -18,10 +18,10 @@ interface WasteLocation {
   waste_type: string;
   weight_kg: number;
   location_name: string;
-  lat?: number;
-  lng?: number;
-  location_lat?: number;
-  location_lng?: number;
+  lat?: number | null;
+  lng?: number | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
   status: string;
 }
 

@@ -1,9 +1,10 @@
-import { supabase } from './supabase';
+import { assertSupabaseConfigured, supabase } from './supabase';
 
 export type UserRole = 'producer' | 'recycler' | 'driver' | 'admin';
 
 // 1. Fungsi Registrasi
 export async function signUpUser(email: string, password: string, fullName: string, role: UserRole) {
+  assertSupabaseConfigured();
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -21,6 +22,7 @@ export async function signUpUser(email: string, password: string, fullName: stri
 
 // 2. Fungsi Login
 export async function signInUser(email: string, password: string) {
+  assertSupabaseConfigured();
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
@@ -32,6 +34,7 @@ export async function signInUser(email: string, password: string) {
 
 // 3. Fungsi Ambil Profil (AMUNISI BARU: Anti-Crash & Auto-Create Profile)
 export async function getCurrentUserProfile() {
+  assertSupabaseConfigured();
   // A. Ambil user aktif dari auth
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return null;
@@ -66,6 +69,7 @@ export async function getCurrentUserProfile() {
 
 // 4. Fungsi Logout
 export async function signOutUser() {
+  assertSupabaseConfigured();
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }

@@ -1,95 +1,22 @@
+/* BioLoop admin dashboard — an operational overview focused on real listings and the points where follow-up is needed. */
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { getCurrentUserProfile, signOutUser } from '@/lib/auth';
+import { Activity, Building2, ClipboardCheck, UsersRound } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { DashboardNotice, DashboardShell } from '@/components/dashboard-shell';
+import { getCurrentUserProfile, signOutUser } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 
-export default function RecyclerDashboard() {
-  const router = useRouter();
-  const [profile, setProfile] = useState<any>(null);
-  const [loadingUser, setLoadingUser] = useState(true);
-  const [listings, setListings] = useState<any[]>([]);
-  const [loadingData, setLoadingData] = useState(true);
+type Listing = { id: string; waste_type: string; weight_kg: number; location_name: string; status: string; created_at: string };
+const statusCopy: Record<string, string> = { available: 'Menunggu pengolah', pending: 'Menunggu pengolah', claimed: 'Sudah diklaim', in_transit: 'Dalam perjalanan', completed: 'Selesai' };
 
-  useEffect(() => {
-    async function initPage() {
-      try {
-        const userProfile = await getCurrentUserProfile();
-        if (!userProfile) {
-          router.push('/login');
-          return;
-        }
-        setProfile(userProfile);
-        fetchListings();
-      } catch (err) {
-        router.push('/login');
-      } finally {
-        setLoadingUser(false);
-      }
-    }
-    initPage();
-  }, [router]);
-
-  const fetchListings = async () => {
-    setLoadingData(true);
-    const { data } = await supabase.from('waste_listings').select('*').order('created_at', { ascending: false });
-    setListings(data || []);
-    setLoadingData(false);
-  };
-
-  const handleClaimListing = async (id: string, weightKg: number) => {
-    const earnedPoints = Math.round(weightKg * 10);
-    const { error: updateError } = await supabase.from('waste_listings').update({ status: 'claimed' }).eq('id', id);
-    if (updateError) { alert('Gagal klaim: ' + updateError.message); return; }
-
-    if (profile?.id) {
-      const newTotalPoints = (profile.total_points || 0) + earnedPoints;
-      await supabase.from('profiles').update({ total_points: newTotalPoints }).eq('id', profile.id);
-      setProfile({ ...profile, total_points: newTotalPoints });
-    }
-    alert(`Berhasil diklaim! Mendapat +${earnedPoints} Poin.`);
-    fetchListings();
-  };
-
-  if (loadingUser) return <div className="min-h-screen flex items-center justify-center">Memuat dashboard...</div>;
-
-  return (
-    <main className="min-h-screen bg-gray-50 p-6 md:p-12 font-sans">
-      <div className="max-w-5xl mx-auto space-y-8">
-        <header className="border-b pb-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-extrabold text-emerald-700">Dashboard Pengolah (Recycler)</h1>
-            <p className="text-sm text-gray-500">Poin Anda: <span className="font-bold text-emerald-600">{profile?.total_points || 0} pts</span></p>
-          </div>
-          <button onClick={() => { signOutUser(); router.push('/login'); }} className="bg-red-50 text-red-600 text-xs px-3 py-2 rounded-lg">Logout</button>
-        </header>
-
-        <section className="bg-white p-6 rounded-xl shadow-sm border">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold text-gray-800">🪱 Feed Pasokan Limbah Siap Klaim</h2>
-            <button onClick={fetchListings} className="text-xs text-emerald-600">Refresh</button>
-          </div>
-          {loadingData ? <p className="text-sm text-gray-500">Memuat data...</p> : listings.length === 0 ? <p className="text-sm text-gray-400">Belum ada pasokan.</p> : (
-            <div className="space-y-3">
-              {listings.map((item) => (
-                <div key={item.id} className="p-4 rounded-lg border flex justify-between items-center bg-white">
-                  <div>
-                    <h3 className="font-semibold text-gray-800">{item.waste_type}</h3>
-                    <p className="text-xs text-gray-500">📍 {item.location_name} • ⚖️ {item.weight_kg} kg</p>
-                  </div>
-                  {item.status === 'available' && (
-                    <button onClick={() => handleClaimListing(item.id, item.weight_kg)} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">
-                      Klaim Logistik
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-    </main>
-  );
+export default function AdminDashboard() {
+  const router = useRouter(); const [profile, setProfile] = useState<any>(null); const [listings, setListings] = useState<Listing[]>([]); const [partnerCount, setPartnerCount] = useState(0); const [isLoading, setIsLoading] = useState(true); const [message, setMessage] = useState('');
+  useEffect(() => { async function initialise() { try { const userProfile = await getCurrentUserProfile(); if (!userProfile || userProfile.role !== 'admin') return router.replace('/dashboard'); setProfile(userProfile); const [listingResult, profileResult] = await Promise.all([supabase.from('waste_listings').select('*').order('created_at', { ascending: false }), supabase.from('profiles').select('*', { count: 'exact', head: true })]); if (listingResult.error) setMessage(listingResult.error.message); else setListings(listingResult.data || []); if (!profileResult.error) setPartnerCount(profileResult.count || 0); } catch { router.replace('/login'); } finally { setIsLoading(false); } } initialise(); }, [router]);
+  if (isLoading) return <main className="bl-dashboard-loading">Menyiapkan dashboard tim BioLoop…</main>;
+  return <DashboardShell role="admin" title="Lihat alur operasional dari satu tempat." description="Tinjau volume listing, kondisi perjalanan, dan area yang perlu ditindaklanjuti oleh tim BioLoop." name={profile?.full_name} onSignOut={async () => { await signOutUser(); router.replace('/login'); }}>
+    <div className="bl-dashboard-stats"><article><Building2 size={19} /><span>Mitra terdaftar</span><strong>{partnerCount}</strong></article><article><ClipboardCheck size={19} /><span>Listing terbuka</span><strong>{listings.filter((item) => ['available', 'pending'].includes(item.status)).length}</strong></article><article><Activity size={19} /><span>Dalam proses</span><strong>{listings.filter((item) => ['claimed', 'in_transit'].includes(item.status)).length}</strong></article></div>
+    <section className="bl-panel"><div className="bl-panel-heading"><span className="bl-panel-icon"><UsersRound size={18} /></span><div><h2>Aktivitas terbaru</h2><p>Daftar pergerakan yang masuk ke sistem, diurutkan dari yang paling baru.</p></div></div>{message && <DashboardNotice>{message}</DashboardNotice>}<div className="bl-operation-list">{listings.length ? listings.slice(0, 10).map((item) => <article className="bl-operation-row" key={item.id}><div><strong>{item.waste_type}</strong><p>{item.location_name || 'Lokasi belum dicantumkan'} · {Number(item.weight_kg).toLocaleString('id-ID')} kg</p></div><span className={`bl-status bl-status-${item.status}`}>{statusCopy[item.status] || item.status}</span></article>) : <p className="bl-empty-state">Belum ada aktivitas listing yang dapat ditinjau.</p>}</div></section>
+  </DashboardShell>;
 }

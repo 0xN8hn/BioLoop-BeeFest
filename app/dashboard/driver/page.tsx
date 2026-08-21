@@ -1,95 +1,24 @@
+/* BioLoop driver dashboard — a simple route board for collection and completion states. */
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { getCurrentUserProfile, signOutUser } from '@/lib/auth';
+import { CheckCheck, MapPin, Route, Truck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { DashboardNotice, DashboardShell } from '@/components/dashboard-shell';
+import { getCurrentUserProfile, signOutUser } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 
-export default function RecyclerDashboard() {
-  const router = useRouter();
-  const [profile, setProfile] = useState<any>(null);
-  const [loadingUser, setLoadingUser] = useState(true);
-  const [listings, setListings] = useState<any[]>([]);
-  const [loadingData, setLoadingData] = useState(true);
+type Listing = { id: string; waste_type: string; weight_kg: number; location_name: string; status: string };
+const statusLabel: Record<string, string> = { claimed: 'Siap diambil', in_transit: 'Dalam perjalanan', completed: 'Selesai' };
 
-  useEffect(() => {
-    async function initPage() {
-      try {
-        const userProfile = await getCurrentUserProfile();
-        if (!userProfile) {
-          router.push('/login');
-          return;
-        }
-        setProfile(userProfile);
-        fetchListings();
-      } catch (err) {
-        router.push('/login');
-      } finally {
-        setLoadingUser(false);
-      }
-    }
-    initPage();
-  }, [router]);
-
-  const fetchListings = async () => {
-    setLoadingData(true);
-    const { data } = await supabase.from('waste_listings').select('*').order('created_at', { ascending: false });
-    setListings(data || []);
-    setLoadingData(false);
-  };
-
-  const handleClaimListing = async (id: string, weightKg: number) => {
-    const earnedPoints = Math.round(weightKg * 10);
-    const { error: updateError } = await supabase.from('waste_listings').update({ status: 'claimed' }).eq('id', id);
-    if (updateError) { alert('Gagal klaim: ' + updateError.message); return; }
-
-    if (profile?.id) {
-      const newTotalPoints = (profile.total_points || 0) + earnedPoints;
-      await supabase.from('profiles').update({ total_points: newTotalPoints }).eq('id', profile.id);
-      setProfile({ ...profile, total_points: newTotalPoints });
-    }
-    alert(`Berhasil diklaim! Mendapat +${earnedPoints} Poin.`);
-    fetchListings();
-  };
-
-  if (loadingUser) return <div className="min-h-screen flex items-center justify-center">Memuat dashboard...</div>;
-
-  return (
-    <main className="min-h-screen bg-gray-50 p-6 md:p-12 font-sans">
-      <div className="max-w-5xl mx-auto space-y-8">
-        <header className="border-b pb-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-extrabold text-emerald-700">Dashboard Pengolah (Recycler)</h1>
-            <p className="text-sm text-gray-500">Poin Anda: <span className="font-bold text-emerald-600">{profile?.total_points || 0} pts</span></p>
-          </div>
-          <button onClick={() => { signOutUser(); router.push('/login'); }} className="bg-red-50 text-red-600 text-xs px-3 py-2 rounded-lg">Logout</button>
-        </header>
-
-        <section className="bg-white p-6 rounded-xl shadow-sm border">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold text-gray-800">🪱 Feed Pasokan Limbah Siap Klaim</h2>
-            <button onClick={fetchListings} className="text-xs text-emerald-600">Refresh</button>
-          </div>
-          {loadingData ? <p className="text-sm text-gray-500">Memuat data...</p> : listings.length === 0 ? <p className="text-sm text-gray-400">Belum ada pasokan.</p> : (
-            <div className="space-y-3">
-              {listings.map((item) => (
-                <div key={item.id} className="p-4 rounded-lg border flex justify-between items-center bg-white">
-                  <div>
-                    <h3 className="font-semibold text-gray-800">{item.waste_type}</h3>
-                    <p className="text-xs text-gray-500">📍 {item.location_name} • ⚖️ {item.weight_kg} kg</p>
-                  </div>
-                  {item.status === 'available' && (
-                    <button onClick={() => handleClaimListing(item.id, item.weight_kg)} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">
-                      Klaim Logistik
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-    </main>
-  );
+export default function DriverDashboard() {
+  const router = useRouter(); const [profile, setProfile] = useState<any>(null); const [jobs, setJobs] = useState<Listing[]>([]); const [isLoading, setIsLoading] = useState(true); const [message, setMessage] = useState(''); const [updatingId, setUpdatingId] = useState<string | null>(null);
+  async function loadJobs() { const { data, error } = await supabase.from('waste_listings').select('*').in('status', ['claimed', 'in_transit']).order('created_at', { ascending: true }); if (error) setMessage(error.message); else setJobs(data || []); }
+  useEffect(() => { async function initialise() { try { const userProfile = await getCurrentUserProfile(); if (!userProfile || userProfile.role !== 'driver') return router.replace('/dashboard'); setProfile(userProfile); await loadJobs(); } catch { router.replace('/login'); } finally { setIsLoading(false); } } initialise(); }, [router]);
+  async function advanceJob(job: Listing) { const nextStatus = job.status === 'claimed' ? 'in_transit' : 'completed'; setUpdatingId(job.id); const { error } = await supabase.from('waste_listings').update({ status: nextStatus }).eq('id', job.id); setUpdatingId(null); if (error) setMessage(error.message); else { setMessage(nextStatus === 'completed' ? 'Penjemputan ditandai selesai.' : 'Status diperbarui menjadi dalam perjalanan.'); await loadJobs(); } }
+  if (isLoading) return <main className="bl-dashboard-loading">Menyiapkan dashboard logistik…</main>;
+  return <DashboardShell role="driver" title="Jaga setiap penjemputan tetap bergerak." description="Lihat penjemputan yang sudah diklaim pengolah, lalu perbarui status saat barang berpindah tangan." name={profile?.full_name} onSignOut={async () => { await signOutUser(); router.replace('/login'); }}>
+    <div className="bl-dashboard-stats"><article><Truck size={19} /><span>Siap diambil</span><strong>{jobs.filter((job) => job.status === 'claimed').length}</strong></article><article><Route size={19} /><span>Dalam perjalanan</span><strong>{jobs.filter((job) => job.status === 'in_transit').length}</strong></article><article><CheckCheck size={19} /><span>Pekerjaan aktif</span><strong>{jobs.length}</strong></article></div>
+    <section className="bl-panel"><div className="bl-panel-heading"><span className="bl-panel-icon"><Truck size={18} /></span><div><h2>Daftar penjemputan</h2><p>Prioritaskan listing yang telah diklaim dan siap dipindahkan ke pengolah.</p></div></div>{message && <DashboardNotice>{message}</DashboardNotice>}<div className="bl-operation-list">{jobs.length ? jobs.map((job) => <article className="bl-opportunity-row" key={job.id}><div className="bl-opportunity-main"><p className={`bl-status bl-status-${job.status}`}>{statusLabel[job.status]}</p><h3>{job.waste_type}</h3><p><MapPin size={14} /> {job.location_name || 'Lokasi belum dicantumkan'} · {Number(job.weight_kg).toLocaleString('id-ID')} kg</p></div><div className="bl-opportunity-meta"><button type="button" className="bl-operation-button" disabled={updatingId === job.id} onClick={() => advanceJob(job)}>{updatingId === job.id ? 'Memperbarui…' : job.status === 'claimed' ? 'Mulai pengantaran' : 'Tandai selesai'}</button></div></article>) : <p className="bl-empty-state">Belum ada penjemputan aktif. Listing akan muncul setelah diklaim pengolah.</p>}</div></section>
+  </DashboardShell>;
 }

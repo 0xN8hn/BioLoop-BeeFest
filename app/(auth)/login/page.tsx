@@ -1,122 +1,53 @@
+/* BioLoop account experience — a calm, precise login screen that routes users into the right operational workspace. */
 'use client';
 
-import { useState } from 'react';
-import { signUpUser, signInUser } from '@/lib/auth';
+import Link from 'next/link';
+import { ArrowRight, LockKeyhole, Mail } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useState, type FormEvent } from 'react';
+import { AuthShell } from '@/components/auth-shell';
+import { getCurrentUserProfile, signInUser } from '@/lib/auth';
+import { dashboardPathForRole } from '@/lib/roles';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<'producer' | 'recycler' | 'driver'>('producer');
-  const [errorMsg, setErrorMsg] = useState('');
-  
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setErrorMsg('');
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage('');
+    setIsSubmitting(true);
 
-  try {
-    if (isRegister) {
-      await signUpUser(email, password, fullName, role);
-      alert('Registrasi berhasil! Silakan login.');
-      setIsRegister(false);
-    } else {
-      // 1. Proses Login Supabase
-      await signInUser(email, password);
-
-      // 2. PAKAI INI (Ganti router.push) agar browser reload & sync cookie sesi Supabase
-      window.location.href = '/';
+    try {
+      const auth = await signInUser(email, password);
+      let role = auth.user?.user_metadata?.role;
+      try {
+        const profile = await getCurrentUserProfile();
+        role = profile?.role ?? role;
+      } catch {
+        // The dashboard hub will make a second profile check after navigation.
+      }
+      router.replace(dashboardPathForRole(role));
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Masuk belum bisa diproses. Silakan coba lagi.');
+      setIsSubmitting(false);
     }
-  } catch (err: any) {
-    setErrorMsg(err.message || 'Terjadi kesalahan saat masuk');
   }
-};
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-      <div className="max-w-md w-full bg-white rounded-xl shadow-md p-6 space-y-6">
-        <h2 className="text-2xl font-bold text-center text-emerald-700">
-          {isRegister ? 'Daftar Akun BioLoop' : 'Masuk ke BioLoop'}
-        </h2>
-
-        {errorMsg && <div className="p-3 bg-red-100 text-red-700 text-xs rounded">{errorMsg}</div>}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {isRegister && (
-            <>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Nama Lengkap / Perusahaan</label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full border rounded-lg p-2 text-sm"
-                  placeholder="Contoh: Restoran Padang Jaya"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Peran (Role)</label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as any)}
-                  className="w-full border rounded-lg p-2 text-sm"
-                >
-                  <option value="producer">Restoran / Penghasil Limbah</option>
-                  <option value="recycler">Pengolah / Maggot Farmer</option>
-                  <option value="driver">Kurir Logistik</option>
-                </select>
-              </div>
-            </>
-          )}
-
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full border rounded-lg p-2 text-sm"
-              placeholder="email@domain.com"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Password</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full border rounded-lg p-2 text-sm"
-              placeholder="••••••••"
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="w-full bg-emerald-600 text-white font-medium py-2 rounded-lg text-sm hover:bg-emerald-700"
-          >
-            {isRegister ? 'Daftar Sekarang' : 'Masuk'}
-          </button>
-        </form>
-
-        <p className="text-xs text-center text-gray-500">
-          {isRegister ? 'Sudah punya akun?' : 'Belum punya akun?'}{' '}
-          <button
-            type="button"
-            onClick={() => setIsRegister(!isRegister)}
-            className="text-emerald-600 font-semibold underline"
-          >
-            {isRegister ? 'Login di sini' : 'Daftar di sini'}
-          </button>
-        </p>
-      </div>
-    </div>
+    <AuthShell mode="login">
+      <div className="bl-auth-heading"><p>Masuk ke BioLoop</p><h2>Lanjutkan pekerjaan yang penting.</h2><span>Gunakan akun yang sudah terdaftar untuk membuka ruang kerja Anda.</span></div>
+      {errorMessage && <p className="bl-auth-alert" role="alert">{errorMessage}</p>}
+      <form className="bl-auth-form" onSubmit={handleSubmit}>
+        <label><span>Email</span><div><Mail size={17} aria-hidden="true" /><input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nama@bisnis.com" /></div></label>
+        <label><span>Kata sandi</span><div><LockKeyhole size={17} aria-hidden="true" /><input type="password" required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Masukkan kata sandi" /></div></label>
+        <button type="submit" disabled={isSubmitting} className="bl-auth-submit">{isSubmitting ? 'Memeriksa akun…' : <>Masuk ke dashboard <ArrowRight size={17} aria-hidden="true" /></>}</button>
+      </form>
+      <p className="bl-auth-switch">Belum punya akun? <Link href="/register">Daftar sebagai mitra</Link></p>
+    </AuthShell>
   );
 }

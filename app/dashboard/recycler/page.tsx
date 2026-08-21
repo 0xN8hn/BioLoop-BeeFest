@@ -1,95 +1,31 @@
+/* BioLoop recycler dashboard — a focused pickup feed for BSF processors, with no synthetic operational metrics. */
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { getCurrentUserProfile, signOutUser } from '@/lib/auth';
+import { CheckCircle2, MapPin, Scale, Sprout } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { DashboardNotice, DashboardShell } from '@/components/dashboard-shell';
+import { getCurrentUserProfile, signOutUser } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
+
+type Listing = { id: string; waste_type: string; weight_kg: number; location_name: string; status: string; created_at: string };
 
 export default function RecyclerDashboard() {
   const router = useRouter();
   const [profile, setProfile] = useState<any>(null);
-  const [loadingUser, setLoadingUser] = useState(true);
-  const [listings, setListings] = useState<any[]>([]);
-  const [loadingData, setLoadingData] = useState(true);
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState('');
+  const [claimingId, setClaimingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function initPage() {
-      try {
-        const userProfile = await getCurrentUserProfile();
-        if (!userProfile) {
-          router.push('/login');
-          return;
-        }
-        setProfile(userProfile);
-        fetchListings();
-      } catch (err) {
-        router.push('/login');
-      } finally {
-        setLoadingUser(false);
-      }
-    }
-    initPage();
-  }, [router]);
+  async function loadListings() { const { data, error } = await supabase.from('waste_listings').select('*').in('status', ['available', 'pending']).order('created_at', { ascending: false }); if (error) setMessage(error.message); else setListings(data || []); }
+  useEffect(() => { async function initialise() { try { const userProfile = await getCurrentUserProfile(); if (!userProfile || userProfile.role !== 'recycler') return router.replace('/dashboard'); setProfile(userProfile); await loadListings(); } catch { router.replace('/login'); } finally { setIsLoading(false); } } initialise(); }, [router]);
+  async function claimListing(id: string) { setClaimingId(id); setMessage(''); const { error } = await supabase.from('waste_listings').update({ status: 'claimed', processor_id: profile.id }).eq('id', id).in('status', ['available', 'pending']); setClaimingId(null); if (error) setMessage(error.message); else { setMessage('Listing diklaim. Koordinasikan pengambilan dengan sumber sisa organik.'); await loadListings(); } }
+  if (isLoading) return <main className="bl-dashboard-loading">Menyiapkan dashboard pengolah…</main>;
 
-  const fetchListings = async () => {
-    setLoadingData(true);
-    const { data } = await supabase.from('waste_listings').select('*').order('created_at', { ascending: false });
-    setListings(data || []);
-    setLoadingData(false);
-  };
-
-  const handleClaimListing = async (id: string, weightKg: number) => {
-    const earnedPoints = Math.round(weightKg * 10);
-    const { error: updateError } = await supabase.from('waste_listings').update({ status: 'claimed' }).eq('id', id);
-    if (updateError) { alert('Gagal klaim: ' + updateError.message); return; }
-
-    if (profile?.id) {
-      const newTotalPoints = (profile.total_points || 0) + earnedPoints;
-      await supabase.from('profiles').update({ total_points: newTotalPoints }).eq('id', profile.id);
-      setProfile({ ...profile, total_points: newTotalPoints });
-    }
-    alert(`Berhasil diklaim! Mendapat +${earnedPoints} Poin.`);
-    fetchListings();
-  };
-
-  if (loadingUser) return <div className="min-h-screen flex items-center justify-center">Memuat dashboard...</div>;
-
-  return (
-    <main className="min-h-screen bg-gray-50 p-6 md:p-12 font-sans">
-      <div className="max-w-5xl mx-auto space-y-8">
-        <header className="border-b pb-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-extrabold text-emerald-700">Dashboard Pengolah (Recycler)</h1>
-            <p className="text-sm text-gray-500">Poin Anda: <span className="font-bold text-emerald-600">{profile?.total_points || 0} pts</span></p>
-          </div>
-          <button onClick={() => { signOutUser(); router.push('/login'); }} className="bg-red-50 text-red-600 text-xs px-3 py-2 rounded-lg">Logout</button>
-        </header>
-
-        <section className="bg-white p-6 rounded-xl shadow-sm border">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold text-gray-800">🪱 Feed Pasokan Limbah Siap Klaim</h2>
-            <button onClick={fetchListings} className="text-xs text-emerald-600">Refresh</button>
-          </div>
-          {loadingData ? <p className="text-sm text-gray-500">Memuat data...</p> : listings.length === 0 ? <p className="text-sm text-gray-400">Belum ada pasokan.</p> : (
-            <div className="space-y-3">
-              {listings.map((item) => (
-                <div key={item.id} className="p-4 rounded-lg border flex justify-between items-center bg-white">
-                  <div>
-                    <h3 className="font-semibold text-gray-800">{item.waste_type}</h3>
-                    <p className="text-xs text-gray-500">📍 {item.location_name} • ⚖️ {item.weight_kg} kg</p>
-                  </div>
-                  {item.status === 'available' && (
-                    <button onClick={() => handleClaimListing(item.id, item.weight_kg)} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">
-                      Klaim Logistik
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-    </main>
-  );
+  const availableKg = listings.reduce((total, item) => total + Number(item.weight_kg || 0), 0);
+  return <DashboardShell role="recycler" title="Temukan bahan organik yang siap diolah." description="Lihat sumber yang tersedia, nilai kesesuaiannya, lalu klaim saat kapasitas pengolahan Anda memungkinkan." name={profile?.full_name} onSignOut={async () => { await signOutUser(); router.replace('/login'); }}>
+    <div className="bl-dashboard-stats"><article><Sprout size={19} /><span>Sumber tersedia</span><strong>{listings.length}</strong></article><article><Scale size={19} /><span>Potensi bahan</span><strong>{availableKg.toLocaleString('id-ID')}<small> kg</small></strong></article><article><CheckCircle2 size={19} /><span>Siap diklaim</span><strong>{listings.filter((item) => item.status === 'available').length}</strong></article></div>
+    <section className="bl-panel"><div className="bl-panel-heading"><span className="bl-panel-icon"><Sprout size={18} /></span><div><h2>Feed bahan organik</h2><p>Hanya tampilkan listing yang masih terbuka untuk pengolahan.</p></div></div>{message && <DashboardNotice>{message}</DashboardNotice>}<div className="bl-operation-list">{listings.length ? listings.map((item) => <article className="bl-opportunity-row" key={item.id}><div className="bl-opportunity-main"><p className="bl-status bl-status-available">Tersedia</p><h3>{item.waste_type}</h3><p><MapPin size={14} /> {item.location_name || 'Lokasi belum dicantumkan'}</p></div><div className="bl-opportunity-meta"><strong>{Number(item.weight_kg).toLocaleString('id-ID')}<small> kg</small></strong><button type="button" className="bl-operation-button" disabled={claimingId === item.id} onClick={() => claimListing(item.id)}>{claimingId === item.id ? 'Mengklaim…' : 'Klaim bahan'}</button></div></article>) : <p className="bl-empty-state">Belum ada bahan organik yang tersedia saat ini. Cek kembali setelah produsen menambahkan listing baru.</p>}</div></section>
+  </DashboardShell>;
 }

@@ -11,6 +11,7 @@ export async function signUpUser(email: string, password: string, fullName: stri
     options: {
       data: {
         full_name: fullName,
+        name: fullName,
         role: role,
       },
     },
@@ -50,18 +51,47 @@ export async function getCurrentUserProfile() {
     console.error('Error fetching profile:', error.message);
   }
 
-  // C. Jika data profil belum ada di tabel database (Auto-Create Fallback)
+  // C. Jika data profil belum ada di tabel database, buat dan VERIFIKASI parent row-nya.
+  //    Listing memakai foreign key producer_id -> profiles.id, jadi fallback tidak boleh dikembalikan sebelum upsert berhasil.
   if (!profile) {
-    const fallbackProfile = {
+    const profileName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User BioLoop';
+    const profileRole = (user.user_metadata?.role as UserRole) || 'producer';
+    const primaryPayload = {
       id: user.id,
       email: user.email || '',
-      full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User BioLoop',
-      role: (user.user_metadata?.role as UserRole) || 'producer',
+      full_name: profileName,
+      role: profileRole,
     };
 
-    // Insert otomatis ke database agar ke depannya selalu ada
-    await supabase.from('profiles').upsert([fallbackProfile]);
-    return fallbackProfile;
+    let { data: createdProfile, error: createError } = await supabase
+      .from('profiles')
+      .upsert(primaryPayload, { onConflict: 'id' })
+      .select('*')
+      .single();
+
+    // Some existing BioLoop schemas call the display column `name` rather than `full_name`.
+    // Retry with that compatible payload only when the first schema shape is rejected.
+    if (createError && /full_name|schema cache|column/i.test(createError.message)) {
+      const compatiblePayload = {
+        id: user.id,
+        email: user.email || '',
+        name: profileName,
+        role: profileRole,
+      };
+      const retry = await supabase
+        .from('profiles')
+        .upsert(compatiblePayload, { onConflict: 'id' })
+        .select('*')
+        .single();
+      createdProfile = retry.data;
+      createError = retry.error;
+    }
+
+    if (createError || !createdProfile) {
+      throw new Error(createError?.message || 'Profil Anda belum dapat disiapkan. Coba masuk kembali sebelum membuat listing.');
+    }
+
+    return createdProfile;
   }
 
   return profile;

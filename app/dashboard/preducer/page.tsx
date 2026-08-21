@@ -45,7 +45,19 @@ export default function ProducerDashboard() {
     event.preventDefault();
     if (!weight || !location) return setMessage('Lengkapi berat dan lokasi penjemputan terlebih dahulu.');
     setIsSaving(true); setMessage('');
-    const { error } = await supabase.from('waste_listings').insert({ producer_id: profile.id, waste_type: wasteType, weight_kg: Number(weight), location_name: location, status: 'available' });
+    let verifiedProfile = profile;
+    try {
+      verifiedProfile = await getCurrentUserProfile();
+    } catch (error) {
+      setIsSaving(false);
+      return setMessage(error instanceof Error ? error.message : 'Profil produsen belum siap. Silakan masuk kembali terlebih dahulu.');
+    }
+    if (!verifiedProfile?.id) {
+      setIsSaving(false);
+      return setMessage('Profil produsen belum ditemukan. Silakan masuk kembali terlebih dahulu.');
+    }
+    setProfile(verifiedProfile);
+    const { error } = await supabase.from('waste_listings').insert({ producer_id: verifiedProfile.id, waste_type: wasteType, weight_kg: Number(weight), location_name: location, status: 'available' });
     setIsSaving(false);
     if (error) return setMessage(error.message);
     setWeight(''); setLocation(''); setMessage('Listing baru sudah siap dilihat mitra pengolah.'); await loadListings();

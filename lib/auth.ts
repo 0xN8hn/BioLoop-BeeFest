@@ -1,6 +1,6 @@
 import { assertSupabaseConfigured, supabase } from './supabase';
 
-export type UserRole = 'producer' | 'recycler' | 'driver' | 'admin';
+export type UserRole = 'producer' | 'recycler' | 'admin';
 
 // 1. Fungsi Registrasi
 export async function signUpUser(email: string, password: string, fullName: string, role: UserRole) {
@@ -82,7 +82,10 @@ export async function synchronizeLegacyProfileShape() {
   if (!user) return null;
 
     const profileName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User BioLoop';
-    const profileRole = (user.user_metadata?.role as UserRole) || 'producer';
+    const metadataRole = user.user_metadata?.role;
+    const profileRole: UserRole = metadataRole === 'producer' || metadataRole === 'recycler' || metadataRole === 'admin'
+      ? metadataRole
+      : 'recycler';
     const primaryPayload = {
       id: user.id,
       email: user.email || '',

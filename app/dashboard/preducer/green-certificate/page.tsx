@@ -1,0 +1,17 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Award, Leaf, Wind } from 'lucide-react';
+import { DashboardShell } from '@/components/dashboard-shell';
+import { Card, CardContent } from '@/components/ui/card';
+import { getCurrentUserProfile, signOutUser } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
+
+export default function GreenCertificatePage() {
+  const router = useRouter(); const [profile, setProfile] = useState<any>(null); const [impacts, setImpacts] = useState<any[]>([]); const [message, setMessage] = useState(''); const [loading, setLoading] = useState(true);
+  useEffect(() => { (async () => { try { const currentProfile = await getCurrentUserProfile(); if (!currentProfile || currentProfile.role !== 'producer') return router.replace('/dashboard'); setProfile(currentProfile); const { data, error } = await supabase.from('order_impacts').select('*').eq('producer_id', currentProfile.id).order('created_at', { ascending: false }); if (error) setMessage(error.message); else setImpacts(data || []); } catch { router.replace('/login'); } finally { setLoading(false); } })(); }, [router]);
+  const totals = useMemo(() => impacts.reduce((acc, item) => ({ weight: acc.weight + Number(item.processed_weight_kg || 0), co2: acc.co2 + Number(item.co2e_saved_kg || 0), methane: acc.methane + Number(item.methane_prevented_kg || 0) }), { weight: 0, co2: 0, methane: 0 }), [impacts]);
+  if (loading) return <main className="work-loading">Memuat sertifikat hijau…</main>;
+  return <DashboardShell role="producer" name={profile?.full_name || profile?.name} points={Number(profile?.total_points ?? profile?.points ?? 0)} onSignOut={async () => { await signOutUser(); router.replace('/login'); }}><main className="market-page certificate-page"><header className="seller-head"><div><p className="work-kicker">SELLER CENTER · SERTIFIKAT HIJAU</p><h2>Dampak yang dibuktikan oleh order selesai.</h2><p>Perhitungan dibuat dari berat akhir yang dikonfirmasi buyer, bukan dari estimasi stok awal.</p></div></header>{message && <p className="work-form-error">{message}</p>}<section className="certificate-sheet"><div className="certificate-mark"><Award size={34} /></div><p>SERTIFIKAT PENGALIHAN MATERIAL ORGANIK</p><h3>{profile?.full_name || profile?.name || 'Mitra BioLoop'}</h3><span>telah mengalihkan material organik melalui transaksi BioLoop yang selesai.</span><div className="certificate-total"><b>{totals.weight.toLocaleString('id-ID')} kg</b><small>material terukur</small></div><footer>Rekap ini akan bertambah otomatis saat order memiliki berat akhir yang dikonfirmasi.</footer></section><section className="impact-stat-grid"><Card><CardContent><Leaf size={19} /><span>Pengurangan CO₂e</span><b>{totals.co2.toLocaleString('id-ID')} kg</b></CardContent></Card><Card><CardContent><Wind size={19} /><span>Metana dicegah</span><b>{totals.methane.toLocaleString('id-ID')} kg</b></CardContent></Card><Card><CardContent><Award size={19} /><span>Order terukur</span><b>{impacts.length}</b></CardContent></Card></section><p className="certificate-note">Faktor perhitungan aplikasi: 2,5 kg CO₂e dan 0,6 kg metana dicegah untuk setiap 1 kg material yang berat akhirnya telah dikonfirmasi. Faktor ini merupakan asumsi produk untuk pelacakan internal dan bukan klaim kredit karbon tersertifikasi.</p></main></DashboardShell>;
+}

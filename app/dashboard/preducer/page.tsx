@@ -5,7 +5,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { CheckCircle2, ClipboardList, Plus, Scale, Truck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { DashboardNotice, DashboardShell } from '@/components/dashboard-shell';
-import { getCurrentUserProfile, signOutUser } from '@/lib/auth';
+import { ensureCurrentUserProfile, getCurrentUserProfile, signOutUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
 type Listing = { id: string; waste_type: string; weight_kg: number; location_name: string; status: string; created_at: string };
@@ -47,7 +47,7 @@ export default function ProducerDashboard() {
     setIsSaving(true); setMessage('');
     let verifiedProfile = profile;
     try {
-      verifiedProfile = await getCurrentUserProfile();
+      verifiedProfile = await ensureCurrentUserProfile();
     } catch (error) {
       setIsSaving(false);
       return setMessage(error instanceof Error ? error.message : 'Profil produsen belum siap. Silakan masuk kembali terlebih dahulu.');

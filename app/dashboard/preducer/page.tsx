@@ -1,83 +1,24 @@
-/* BioLoop producer dashboard — one clear workflow: publish organic material and follow each pickup. */
+/* Producer workspace — map, listing composer, and active pickup queue in a compact operational layout. */
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useState, type FormEvent } from 'react';
-import { CheckCircle2, ClipboardList, Plus, Scale, Truck } from 'lucide-react';
+import { ClipboardList, Plus, Scale, Truck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { DashboardNotice, DashboardShell } from '@/components/dashboard-shell';
+import { DashboardNotice, DashboardShell, OpsMetric, OpsPanel, StatusPill } from '@/components/dashboard-shell';
 import { ensureCurrentUserProfile, getCurrentUserProfile, signOutUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
-type Listing = { id: string; waste_type: string; weight_kg: number; location_name: string; status: string; created_at: string };
-const statusCopy: Record<string, string> = { available: 'Menunggu pengolah', pending: 'Menunggu pengolah', claimed: 'Sudah diklaim', in_transit: 'Dalam perjalanan', completed: 'Selesai' };
+const MapWorkspace = dynamic(() => import('@/components/Map'), { ssr: false, loading: () => <div className="ops-map-loading">Memuat peta operasi…</div> });
+type Listing = { id: string; waste_type: string; weight_kg: number; location_name: string; status: string; created_at: string; lat?: number; lng?: number };
 
 export default function ProducerDashboard() {
-  const router = useRouter();
-  const [profile, setProfile] = useState<any>(null);
-  const [listings, setListings] = useState<Listing[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [message, setMessage] = useState('');
-  const [wasteType, setWasteType] = useState('Sisa dapur dan makanan siap olah');
-  const [weight, setWeight] = useState('');
-  const [location, setLocation] = useState('');
-
-  async function loadListings(producerId?: string) {
-    let query = supabase.from('waste_listings').select('*').order('created_at', { ascending: false });
-    if (producerId) query = query.eq('producer_id', producerId);
-    const { data, error } = await query;
-    if (error) setMessage(error.message);
-    else setListings(data || []);
-  }
-
-  useEffect(() => {
-    async function initialise() {
-      try {
-        const userProfile = await getCurrentUserProfile();
-        if (!userProfile || userProfile.role !== 'producer') return router.replace('/dashboard');
-        setProfile(userProfile);
-        await loadListings(userProfile.id);
-      } catch { router.replace('/login'); }
-      finally { setIsLoading(false); }
-    }
-    initialise();
-  }, [router]);
-
-  async function addListing(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!weight || !location) return setMessage('Lengkapi berat dan lokasi penjemputan terlebih dahulu.');
-    setIsSaving(true); setMessage('');
-    let verifiedProfile = profile;
-    try {
-      verifiedProfile = await ensureCurrentUserProfile();
-    } catch (error) {
-      setIsSaving(false);
-      return setMessage(error instanceof Error ? error.message : 'Profil produsen belum siap. Silakan masuk kembali terlebih dahulu.');
-    }
-    if (!verifiedProfile?.id) {
-      setIsSaving(false);
-      return setMessage('Profil produsen belum ditemukan. Silakan masuk kembali terlebih dahulu.');
-    }
-    setProfile(verifiedProfile);
-    const { data: createdListing, error } = await supabase
-      .from('waste_listings')
-      .insert({ producer_id: verifiedProfile.id, waste_type: wasteType, weight_kg: Number(weight), location_name: location, status: 'available' })
-      .select('*')
-      .single();
-    setIsSaving(false);
-    if (error) return setMessage(error.message);
-    if (!createdListing) return setMessage('Listing tidak mengembalikan data. Periksa policy SELECT di Supabase.');
-    setListings((current) => [createdListing, ...current.filter((item) => item.id !== createdListing.id)]);
-    setWeight(''); setLocation(''); setMessage('Listing baru berhasil dipublikasikan dan muncul di aktivitas Anda.');
-  }
-
-  const open = listings.filter((item) => ['available', 'pending'].includes(item.status)).length;
-  const completedKg = listings.filter((item) => item.status === 'completed').reduce((total, item) => total + Number(item.weight_kg || 0), 0);
-  if (isLoading) return <main className="bl-dashboard-loading">Menyiapkan dashboard produsen…</main>;
-
-  return <DashboardShell role="producer" title="Sisa dapur, bergerak ke rute berikutnya." description="Buat listing saat sisa organik siap dipisahkan. Pantau progresnya tanpa mengandalkan chat yang tercecer." name={profile?.full_name} onSignOut={async () => { await signOutUser(); router.replace('/login'); }}>
-    <div className="bl-dashboard-stats"><article><ClipboardList size={19} /><span>Listing aktif</span><strong>{open}</strong></article><article><Truck size={19} /><span>Sudah diklaim</span><strong>{listings.filter((item) => item.status === 'claimed').length}</strong></article><article><Scale size={19} /><span>Telah selesai diolah</span><strong>{completedKg.toLocaleString('id-ID')}<small> kg</small></strong></article></div>
-    <div className="bl-dashboard-columns producer-layout"><section className="bl-panel bl-create-panel"><div className="bl-panel-heading"><span className="bl-panel-icon"><Plus size={18} /></span><div><h2>Listing penjemputan baru</h2><p>Masukkan detail yang diperlukan pengolah untuk merencanakan pengambilan.</p></div></div><form className="bl-operation-form" onSubmit={addListing}><label>Jenis sisa organik<select value={wasteType} onChange={(event) => setWasteType(event.target.value)}><option>Sisa dapur dan makanan siap olah</option><option>Kulit buah dan sayur</option><option>Ampas tahu atau kelapa</option><option>Sisa olahan daging dan ikan</option></select></label><label>Estimasi berat (kg)<input type="number" min="1" value={weight} onChange={(event) => setWeight(event.target.value)} placeholder="Contoh: 25" /></label><label>Lokasi penjemputan<input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Contoh: Dapur Sore, Cikini" /></label><button type="submit" className="bl-operation-button" disabled={isSaving}>{isSaving ? 'Menyimpan…' : 'Publikasikan listing'}</button></form>{message && <DashboardNotice>{message}</DashboardNotice>}</section>
-    <section className="bl-panel"><div className="bl-panel-heading"><span className="bl-panel-icon"><Truck size={18} /></span><div><h2>Aktivitas penjemputan</h2><p>Status terkini dari listing yang Anda buat.</p></div></div><div className="bl-operation-list">{listings.length ? listings.map((item) => <article className="bl-operation-row" key={item.id}><div><strong>{item.waste_type}</strong><p>{item.location_name || 'Lokasi belum dicantumkan'} · {Number(item.weight_kg).toLocaleString('id-ID')} kg</p></div><span className={`bl-status bl-status-${item.status}`}>{statusCopy[item.status] || item.status}</span></article>) : <p className="bl-empty-state">Belum ada listing. Mulai dari satu sisa dapur yang sudah dipisahkan.</p>}</div></section></div>
-  </DashboardShell>;
+  const router = useRouter(); const [profile, setProfile] = useState<any>(null); const [listings, setListings] = useState<Listing[]>([]); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [message, setMessage] = useState(''); const [wasteType, setWasteType] = useState('Sisa dapur dan makanan siap olah'); const [weight, setWeight] = useState(''); const [location, setLocation] = useState('');
+  const points = Number(profile?.total_points ?? profile?.points ?? 0);
+  async function loadListings(producerId: string) { const { data, error } = await supabase.from('waste_listings').select('*').eq('producer_id', producerId).order('created_at', { ascending: false }); if (error) setMessage(error.message); else setListings(data || []); }
+  useEffect(() => { async function init() { try { const current = await getCurrentUserProfile(); if (!current || current.role !== 'producer') return router.replace('/dashboard'); setProfile(current); await loadListings(current.id); } catch { router.replace('/login'); } finally { setLoading(false); } } init(); }, [router]);
+  async function createListing(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!weight || !location) return setMessage('Isi berat dan lokasi terlebih dahulu.'); setSaving(true); setMessage(''); try { const current = await ensureCurrentUserProfile(); const { data, error } = await supabase.from('waste_listings').insert({ producer_id: current.id, waste_type: wasteType, weight_kg: Number(weight), location_name: location, status: 'available' }).select('*').single(); if (error) throw error; if (!data) throw new Error('Listing belum mengembalikan data.'); setProfile(current); setListings((items) => [data, ...items]); setWeight(''); setLocation(''); setMessage('Listing dipublikasikan.'); } catch (error) { setMessage(error instanceof Error ? error.message : 'Listing belum dapat dibuat.'); } finally { setSaving(false); } }
+  if (loading) return <main className="ops-loading">Menyiapkan workspace…</main>;
+  const active = listings.filter((item) => ['available', 'pending', 'claimed', 'in_transit'].includes(item.status)); const completedKg = listings.filter((item) => item.status === 'completed').reduce((sum, item) => sum + Number(item.weight_kg || 0), 0);
+  return <DashboardShell role="producer" name={profile?.full_name || profile?.name} points={points} onSignOut={async () => { await signOutUser(); router.replace('/login'); }}><div id="ringkasan" className="ops-page-heading"><div><p>RINGKASAN</p><h2>Operasi hari ini</h2></div><button className="ops-primary" onClick={() => document.getElementById('buat-listing')?.scrollIntoView({ behavior: 'smooth' })}><Plus size={17} /> Buat listing</button></div><div className="ops-metric-grid"><OpsMetric label="Listing aktif" value={active.length} tone="clay" /><OpsMetric label="Siap dijemput" value={listings.filter((item) => item.status === 'claimed').length} tone="amber" /><OpsMetric label="Selesai diolah" value={`${completedKg.toLocaleString('id-ID')} kg`} tone="sage" /><OpsMetric label="Poin BioLoop" value={points} tone="ink" note="Dari aktivitas terverifikasi" /></div><div className="ops-work-grid"><OpsPanel id="peta" title="Peta penjemputan" action={<span className="ops-panel-note">{active.length} titik aktif</span>}><MapWorkspace locations={active} /></OpsPanel><OpsPanel title="Antrian penjemputan" action={<a href="#aktivitas" className="ops-link">Lihat semua</a>}><div className="ops-queue">{active.slice(0, 4).map((item) => <article key={item.id} className="ops-queue-row"><div className="ops-queue-icon"><Truck size={16} /></div><div><strong>{item.location_name || 'Lokasi belum diisi'}</strong><p>{item.waste_type} · {Number(item.weight_kg).toLocaleString('id-ID')} kg</p></div><StatusPill status={item.status} /></article>)}{!active.length && <p className="ops-empty">Belum ada penjemputan aktif.</p>}</div></OpsPanel></div><div className="ops-bottom-grid"><OpsPanel id="buat-listing" title="Buat listing"><form className="ops-form" onSubmit={createListing}><label>Jenis sisa<select value={wasteType} onChange={(event) => setWasteType(event.target.value)}><option>Sisa dapur dan makanan siap olah</option><option>Kulit buah dan sayur</option><option>Ampas tahu atau kelapa</option><option>Sisa olahan daging dan ikan</option></select></label><div className="ops-form-split"><label>Berat (kg)<input type="number" min="1" value={weight} onChange={(event) => setWeight(event.target.value)} placeholder="25" /></label><label>Lokasi<input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Dapur Sore, Cikini" /></label></div><button className="ops-primary" disabled={saving}>{saving ? 'Menyimpan…' : 'Publikasikan'}</button></form>{message && <DashboardNotice>{message}</DashboardNotice>}</OpsPanel><OpsPanel id="aktivitas" title="Listing terbaru" action={<ClipboardList size={17} className="ops-heading-icon" />}><div className="ops-table">{listings.slice(0, 7).map((item) => <article key={item.id}><div><strong>{item.waste_type}</strong><span>{item.location_name || 'Lokasi belum diisi'}</span></div><span>{Number(item.weight_kg).toLocaleString('id-ID')} kg</span><StatusPill status={item.status} /></article>)}{!listings.length && <p className="ops-empty">Belum ada listing.</p>}</div></OpsPanel></div></DashboardShell>;
 }

@@ -1,46 +1,22 @@
-/* BioLoop recycler dashboard — a focused pickup feed for BSF processors, with no synthetic operational metrics. */
+/* Recycler workspace — available organic supply, claim actions, map, and real points in one dense console. */
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import { CheckCircle2, MapPin, Scale, Sprout } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { DashboardNotice, DashboardShell } from '@/components/dashboard-shell';
+import { DashboardNotice, DashboardShell, OpsMetric, OpsPanel, StatusPill } from '@/components/dashboard-shell';
 import { getCurrentUserProfile, signOutUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
-type Listing = { id: string; waste_type: string; weight_kg: number; location_name: string; status: string; created_at: string };
+const MapWorkspace = dynamic(() => import('@/components/Map'), { ssr: false, loading: () => <div className="ops-map-loading">Memuat peta operasi…</div> });
+type Listing = { id: string; waste_type: string; weight_kg: number; location_name: string; status: string; created_at: string; lat?: number; lng?: number };
 
 export default function RecyclerDashboard() {
-  const router = useRouter();
-  const [profile, setProfile] = useState<any>(null);
-  const [listings, setListings] = useState<Listing[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [message, setMessage] = useState('');
-  const [claimingId, setClaimingId] = useState<string | null>(null);
-
-  async function loadListings() { const { data, error } = await supabase.from('waste_listings').select('*').in('status', ['available', 'pending']).order('created_at', { ascending: false }); if (error) setMessage(error.message); else setListings(data || []); }
-  useEffect(() => { async function initialise() { try { const userProfile = await getCurrentUserProfile(); if (!userProfile || userProfile.role !== 'recycler') return router.replace('/dashboard'); setProfile(userProfile); await loadListings(); } catch { router.replace('/login'); } finally { setIsLoading(false); } } initialise(); }, [router]);
-  async function claimListing(id: string) {
-    if (!profile?.id) return setMessage('Profil pengolah belum tersedia. Logout lalu masuk kembali.');
-    setClaimingId(id); setMessage('');
-    const { data: claimedListing, error } = await supabase
-      .from('waste_listings')
-      .update({ status: 'claimed', processor_id: profile.id })
-      .eq('id', id)
-      .in('status', ['available', 'pending'])
-      .select('*')
-      .single();
-    setClaimingId(null);
-    if (error) return setMessage(error.message);
-    if (!claimedListing) return setMessage('Klaim tidak mengembalikan data. Periksa policy UPDATE recycler di Supabase.');
-    setListings((current) => current.filter((listing) => listing.id !== claimedListing.id));
-    setMessage('Listing diklaim. Koordinasikan pengambilan dengan sumber sisa organik.');
-  }
-  if (isLoading) return <main className="bl-dashboard-loading">Menyiapkan dashboard pengolah…</main>;
-
-  const availableKg = listings.reduce((total, item) => total + Number(item.weight_kg || 0), 0);
-  return <DashboardShell role="recycler" title="Temukan bahan organik yang siap diolah." description="Lihat sumber yang tersedia, nilai kesesuaiannya, lalu klaim saat kapasitas pengolahan Anda memungkinkan." name={profile?.full_name} onSignOut={async () => { await signOutUser(); router.replace('/login'); }}>
-    <div className="bl-dashboard-stats"><article><Sprout size={19} /><span>Sumber tersedia</span><strong>{listings.length}</strong></article><article><Scale size={19} /><span>Potensi bahan</span><strong>{availableKg.toLocaleString('id-ID')}<small> kg</small></strong></article><article><CheckCircle2 size={19} /><span>Siap diklaim</span><strong>{listings.filter((item) => item.status === 'available').length}</strong></article></div>
-    <section className="bl-panel"><div className="bl-panel-heading"><span className="bl-panel-icon"><Sprout size={18} /></span><div><h2>Feed bahan organik</h2><p>Hanya tampilkan listing yang masih terbuka untuk pengolahan.</p></div></div>{message && <DashboardNotice>{message}</DashboardNotice>}<div className="bl-operation-list">{listings.length ? listings.map((item) => <article className="bl-opportunity-row" key={item.id}><div className="bl-opportunity-main"><p className="bl-status bl-status-available">Tersedia</p><h3>{item.waste_type}</h3><p><MapPin size={14} /> {item.location_name || 'Lokasi belum dicantumkan'}</p></div><div className="bl-opportunity-meta"><strong>{Number(item.weight_kg).toLocaleString('id-ID')}<small> kg</small></strong><button type="button" className="bl-operation-button" disabled={claimingId === item.id} onClick={() => claimListing(item.id)}>{claimingId === item.id ? 'Mengklaim…' : 'Klaim bahan'}</button></div></article>) : <p className="bl-empty-state">Belum ada bahan organik yang tersedia saat ini. Cek kembali setelah produsen menambahkan listing baru.</p>}</div></section>
-  </DashboardShell>;
+  const router = useRouter(); const [profile, setProfile] = useState<any>(null); const [available, setAvailable] = useState<Listing[]>([]); const [claimed, setClaimed] = useState<Listing[]>([]); const [loading, setLoading] = useState(true); const [message, setMessage] = useState(''); const [claimingId, setClaimingId] = useState<string | null>(null); const points = Number(profile?.total_points ?? profile?.points ?? 0);
+  async function loadData(processorId: string) { const [open, owned] = await Promise.all([supabase.from('waste_listings').select('*').in('status', ['available', 'pending']).order('created_at', { ascending: false }), supabase.from('waste_listings').select('*').eq('processor_id', processorId).in('status', ['claimed', 'in_transit']).order('created_at', { ascending: false })]); if (open.error) setMessage(open.error.message); else setAvailable(open.data || []); if (owned.error) setMessage(owned.error.message); else setClaimed(owned.data || []); }
+  useEffect(() => { async function init() { try { const current = await getCurrentUserProfile(); if (!current || current.role !== 'recycler') return router.replace('/dashboard'); setProfile(current); await loadData(current.id); } catch { router.replace('/login'); } finally { setLoading(false); } } init(); }, [router]);
+  async function claim(id: string) { if (!profile?.id) return setMessage('Profil pengolah belum tersedia.'); setClaimingId(id); setMessage(''); const { data, error } = await supabase.from('waste_listings').update({ status: 'claimed', processor_id: profile.id }).eq('id', id).in('status', ['available', 'pending']).select('*').single(); setClaimingId(null); if (error) return setMessage(error.message); if (!data) return setMessage('Klaim belum mengembalikan data.'); setAvailable((rows) => rows.filter((row) => row.id !== id)); setClaimed((rows) => [data, ...rows]); setMessage('Bahan berhasil diklaim.'); }
+  if (loading) return <main className="ops-loading">Menyiapkan workspace…</main>; const availableKg = available.reduce((sum, item) => sum + Number(item.weight_kg || 0), 0); const claimedKg = claimed.reduce((sum, item) => sum + Number(item.weight_kg || 0), 0);
+  return <DashboardShell role="recycler" name={profile?.full_name || profile?.name} points={points} onSignOut={async () => { await signOutUser(); router.replace('/login'); }}><div id="ringkasan" className="ops-page-heading"><div><p>RINGKASAN</p><h2>Pasokan organik</h2></div><span className="ops-live"><i /> Live</span></div><div className="ops-metric-grid"><OpsMetric label="Sumber terbuka" value={available.length} tone="clay" /><OpsMetric label="Potensi bahan" value={`${availableKg.toLocaleString('id-ID')} kg`} tone="amber" /><OpsMetric label="Dalam klaim" value={`${claimedKg.toLocaleString('id-ID')} kg`} tone="sage" /><OpsMetric label="Poin BioLoop" value={points} tone="ink" /></div><div className="ops-work-grid"><OpsPanel id="peta" title="Sebaran bahan tersedia" action={<span className="ops-panel-note">{available.length} titik</span>}><MapWorkspace locations={available} /></OpsPanel><OpsPanel title="Klaim saya" action={<span className="ops-panel-note">{claimed.length} aktif</span>}><div className="ops-queue">{claimed.slice(0, 4).map((item) => <article key={item.id} className="ops-queue-row"><div className="ops-queue-icon"><Sprout size={16} /></div><div><strong>{item.waste_type}</strong><p>{item.location_name} · {Number(item.weight_kg).toLocaleString('id-ID')} kg</p></div><StatusPill status={item.status} /></article>)}{!claimed.length && <p className="ops-empty">Belum ada bahan dalam klaim.</p>}</div></OpsPanel></div><OpsPanel id="aktivitas" title="Bahan siap diklaim" action={<span className="ops-panel-note">Pilih sesuai kapasitas</span>}>{message && <DashboardNotice>{message}</DashboardNotice>}<div className="ops-supply-grid">{available.map((item) => <article key={item.id} className="ops-supply-card"><div><StatusPill status={item.status} /><h3>{item.waste_type}</h3><p><MapPin size={14} /> {item.location_name || 'Lokasi belum diisi'}</p></div><div><strong>{Number(item.weight_kg).toLocaleString('id-ID')}<small> kg</small></strong><button className="ops-claim-button" disabled={claimingId === item.id} onClick={() => claim(item.id)}>{claimingId === item.id ? 'Mengklaim…' : 'Klaim'}</button></div></article>)}{!available.length && <p className="ops-empty">Tidak ada bahan baru saat ini.</p>}</div></OpsPanel></DashboardShell>;
 }
